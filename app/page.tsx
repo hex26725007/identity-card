@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { NameOption } from '@/lib/identity';
+import { buildSpokenIntroduction, wordCount } from '@/lib/introduction';
+import { toEnglishSurname } from '@/lib/surname';
 import {
   ArrowRight,
   Check,
@@ -84,15 +86,29 @@ const defaultNameOptions: NameOption[] = [
   },
 ];
 
-const roles = ['学生', '设计师', '销售', '产品经理', '自由职业者'];
-const moods = ['温柔', '外向', '理性', '有创造力', '可靠', '幽默'];
-const scenes = ['课堂 / 校园', '海外工作', '社交活动', '邮件签名', '旅行'];
+const defaultProfile = {
+  surname: '',
+  role: '职场新人',
+  moods: ['温柔', '有创造力'],
+  scenes: ['工作', '邮件签名'],
+  intro: '我喜欢观察生活，把复杂的事情变得简单、有趣。',
+};
+
+const sameChoices = (current: string[], saved: string[]) =>
+  current.length === saved.length && current.every((item) => saved.includes(item));
+
+const roles = ['在校学生', '职场新人', '资深职场人', '管理者', '自由职业'];
+const moods = ['温柔', '外向', '内敛', '自信', '沉稳', '理性', '有创造力', '可靠', '幽默'];
+const scenes = ['课堂 / 校园', '工作', '社交活动', '邮件签名', '旅行'];
 
 export default function Home() {
-  const [role, setRole] = useState('设计师');
-  const [selectedMoods, setSelectedMoods] = useState(['温柔', '有创造力']);
-  const [selectedScenes, setSelectedScenes] = useState(['海外工作', '邮件签名']);
-  const [intro, setIntro] = useState('我喜欢观察生活，把复杂的事情变得简单、有趣。');
+  const [surname, setSurname] = useState(defaultProfile.surname);
+  const [role, setRole] = useState(defaultProfile.role);
+  const [selectedMoods, setSelectedMoods] = useState(defaultProfile.moods);
+  const [selectedScenes, setSelectedScenes] = useState(defaultProfile.scenes);
+  const [intro, setIntro] = useState(defaultProfile.intro);
+  const [savedProfile, setSavedProfile] = useState(defaultProfile);
+  const abortRef = useRef<AbortController | null>(null);
   const [generated, setGenerated] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,9 +138,44 @@ export default function Home() {
     window.setTimeout(() => setPlaying(false), 1800);
   };
 
-  const cardIntro = introduction || `Hi, I’m ${chosen.name}, but feel free to call me ${chosen.name}. Great to meet you! ${intro} I'm excited to learn and connect with you.`;
+  const englishSurname = toEnglishSurname(surname);
+  const greeting = `Hi, I’m XX, but you can call me ${chosen.name}.`;
+  const introStale =
+    role !== savedProfile.role ||
+    intro !== savedProfile.intro ||
+    !sameChoices(selectedMoods, savedProfile.moods) ||
+    !sameChoices(selectedScenes, savedProfile.scenes);
+  const draftedIntro = buildSpokenIntroduction({
+    name: chosen.name,
+    role,
+    moods: selectedMoods,
+    scenes: selectedScenes,
+    note: intro,
+  });
+  const cardIntro = introduction && !introStale && wordCount(introduction) >= 60 ? introduction : draftedIntro;
+
+  const profileChanged =
+    surname !== savedProfile.surname ||
+    introStale;
+
+  const cancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setSurname(savedProfile.surname);
+    setRole(savedProfile.role);
+    setSelectedMoods([...savedProfile.moods]);
+    setSelectedScenes([...savedProfile.scenes]);
+    setIntro(savedProfile.intro);
+    setError(null);
+    setLoading(false);
+    setGenerated(true);
+  };
 
   const generate = async () => {
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
+    const profile = { surname, role, moods: [...selectedMoods], scenes: [...selectedScenes], intro };
     setLoading(true);
     setGenerated(false);
     setError(null);
@@ -132,7 +183,8 @@ export default function Home() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, moods: selectedMoods, scenes: selectedScenes, intro }),
+        body: JSON.stringify(profile),
+        signal: controller.signal,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : '生成失败，请稍后再试。');
@@ -142,13 +194,18 @@ export default function Home() {
       setIntroduction(typeof data.introduction === 'string' ? data.introduction : '');
       setSelectedName(names[0].name);
       setExpanded(names[0].name);
+      setSavedProfile(profile);
       setFromApi(true);
       setGenerated(true);
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return;
       setGenerated(true);
       setError(cause instanceof Error ? cause.message : '生成失败，请稍后再试。');
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   };
 
@@ -181,15 +238,17 @@ export default function Home() {
       <section className="workspace">
         <div className="section-heading"><div className="number">1</div><div><h2>定制你的画像</h2><p>选择最符合你的关键词</p></div><span className="hint">大约需要 30 秒</span></div>
         <div className="form-card">
+          <label htmlFor="surname">你的姓</label>
+          <div className="surname-row"><input id="surname" className="surname-input" value={surname} maxLength={12} placeholder="王" onChange={(event) => setSurname(event.target.value)} />{englishSurname && <span className="surname-english">{englishSurname}</span>}</div>
           <label>你的身份 <span>必选</span></label>
           <div className="chip-row role-row">{roles.map((item) => <button key={item} className={`chip ${role === item ? 'selected' : ''}`} onClick={() => setRole(item)}>{item}</button>)}</div>
-          <label>你的气质与兴趣 <small>可多选</small></label>
+          <label>你的气质 <small>可多选</small></label>
           <div className="chip-row">{moods.map((item) => <button key={item} className={`chip ${selectedMoods.includes(item) ? 'selected' : ''}`} onClick={() => toggle(item, selectedMoods, setSelectedMoods)}>{item}</button>)}</div>
           <label>主要使用场景 <small>可多选</small></label>
           <div className="chip-row">{scenes.map((item) => <button key={item} className={`chip ${selectedScenes.includes(item) ? 'selected' : ''}`} onClick={() => toggle(item, selectedScenes, setSelectedScenes)}>{item}</button>)}</div>
           <label htmlFor="intro">还有什么想告诉我们？ <small>选填</small></label>
           <textarea id="intro" value={intro} onChange={(event) => setIntro(event.target.value)} maxLength={80} />
-          <div className="form-footer"><span>{intro.length}/80</span><button className="primary-button" onClick={generate} disabled={loading}><Sparkles size={15} />{loading ? '正在生成…' : fromApi ? '重新生成专属推荐' : '生成专属推荐'} <ArrowRight size={15} /></button></div>
+          <div className="form-footer"><span>{intro.length}/80</span><div className="form-actions"><button type="button" className="cancel-button" onClick={cancel} disabled={!profileChanged && !loading}><X size={14} />取消</button><button className="primary-button" onClick={generate} disabled={loading}><Sparkles size={15} />{loading ? '正在生成…' : fromApi ? '重新生成专属推荐' : '生成专属推荐'} <ArrowRight size={15} /></button></div></div>
           {error && <p className="form-error">{error}</p>}
         </div>
       </section>
@@ -215,12 +274,12 @@ export default function Home() {
           <div className="identity-header"><div><span className="overline">PERSONAL IDENTITY PASS</span><span className="card-id">ID · 2025·V1.0</span></div><div className="identity-logo"><WandSparkles size={16} /></div></div>
           <div className="identity-name"><div><span>我的英文名</span><h3>{chosen.name}</h3><p>{chosen.phonetic} · {chosen.pinyin} · {chosen.meaning}</p></div><button className="sound-orb" onClick={() => speak(chosen.name)}><Volume2 size={19} /></button></div>
           <div className="identity-block"><div className="block-label"><MessageCircle size={13} /> 30 秒英文自我介绍 <button onClick={copyIntro}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></div><p>{cardIntro}</p></div>
-          <div className="identity-block"><div className="block-label"><Mail size={13} /> 邮箱签名（EMAIL SIGNATURE）</div><div className="signature"><div className="mini-avatar">{chosen.name.charAt(0)}</div><div><b>{chosen.name} {role === '设计师' ? 'Li' : 'Wang'}</b><span>{role} · Creative & Product Team</span><span>+86 138 0000 2025 · {chosen.name.toLowerCase()}@hello.com</span></div></div></div>
+          <div className="identity-block"><div className="block-label"><Mail size={13} /> 邮箱签名（EMAIL SIGNATURE）</div><div className="signature"><div className="mini-avatar">{chosen.name.charAt(0)}</div><div><b>{englishSurname ? `${chosen.name} ${englishSurname}` : chosen.name}</b><span>{role} · Creative & Product Team</span><span>+86 138 0000 2025 · {chosen.name.toLowerCase()}@hello.com</span></div></div></div>
           <button className="share-button" onClick={copyIntro}><Send size={15} />一键复制完整身份卡 <span>复制后可直接使用</span></button>
         </div>
       </section>
 
-      <section className="tip-banner"><div className="tip-icon"><Lightbulb size={17} /></div><div><b>第一次见面，可以这样说</b><p>Hi, I’m {chosen.name}, but you can call me {chosen.name}.</p></div><button onClick={() => speak(`Hi, I’m ${chosen.name}, but you can call me ${chosen.name}.`)}><Mic2 size={15} /></button></section>
+      <section className="tip-banner"><div className="tip-icon"><Lightbulb size={17} /></div><div><b>第一次见面，可以这样说</b><p>{greeting}</p></div><button onClick={() => speak(greeting)}><Mic2 size={15} /></button></section>
 
       <footer className="bottom-nav"><button className="active"><Sparkles size={17} /><span>生成名字</span></button><button><CircleHelp size={17} /><span>怎么使用</span></button><button><Gem size={17} /><span>我的名字</span></button><button><Menu size={17} /><span>更多</span></button></footer>
     </main>
