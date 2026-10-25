@@ -1,4 +1,5 @@
 import './globals.css';
+import ThemeProvider from '@/components/ThemeProvider';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         {/* Privacy-friendly analytics by Plausible */}
         <script async src="https://plausible.io/js/pa-RbLg8n_iTPv3BFKAIvHno.js" />
@@ -22,7 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

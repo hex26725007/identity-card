@@ -1,6 +1,9 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import FaqSection from '@/components/FaqSection';
+import FeatureSection from '@/components/FeatureSection';
+import ThemeToggle from '@/components/ThemeToggle';
 import type { NameOption } from '@/lib/identity';
 import { buildSpokenIntroduction, wordCount } from '@/lib/introduction';
 import { toEnglishSurname } from '@/lib/surname';
@@ -221,6 +224,7 @@ export default function Home() {
         <div className="brand-mark"><WandSparkles size={17} strokeWidth={2.5} /></div>
         <div className="brand-copy"><strong>英文身份助手</strong><span>Find Your English Identity</span></div>
         <div className="top-actions">
+          <ThemeToggle />
           <button className="help-button" aria-label="帮助"><CircleHelp size={18} /></button>
           <button className="avatar-button" aria-label="用户菜单" onClick={() => setShowMenu(!showMenu)}>J</button>
           {showMenu && <div className="user-menu"><strong>今日还可生成 3 次</strong><span>这是一个无需登录的体验版本</span></div>}
@@ -280,6 +284,10 @@ export default function Home() {
       </section>
 
       <section className="tip-banner"><div className="tip-icon"><Lightbulb size={17} /></div><div><b>第一次见面，可以这样说</b><p>{greeting}</p></div><button onClick={() => speak(greeting)}><Mic2 size={15} /></button></section>
+
+      <FeatureSection />
+
+      <FaqSection />
 
       <footer className="bottom-nav"><button className="active"><Sparkles size={17} /><span>生成名字</span></button><button><CircleHelp size={17} /><span>怎么使用</span></button><button><Gem size={17} /><span>我的名字</span></button><button><Menu size={17} /><span>更多</span></button></footer>
     </main>
